@@ -1,55 +1,217 @@
-"use client";
+"use client"
 
-import { useState } from "react";
-import { PRODUCTS, Product } from "./products";
-import Link from "next/link";
-
-interface CartItem extends Product {
-  quantity: number;
-}
+import { useEffect, useState } from "react"
+import { useRouter } from "next/navigation"
+import { ShoppingCart, User, Loader2 } from "lucide-react"
+import { Button } from "@/components/ui/button"
+import { Badge } from "@/components/ui/badge"
+import { Alert, AlertDescription } from "@/components/ui/alert"
+import { ProductCard } from "@/components/product-card"
+import { useTelegram } from "@/hooks/use-telegram"
+import { useCartStore } from "@/store/cart-store"
+import { useAuthStore } from "@/store/auth-store"
+import type { Product } from "@/types"
 
 export default function HomePage() {
-  const [cart, setCart] = useState<CartItem[]>([]);
+  const [products, setProducts] = useState<Product[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
 
-  const addToCart = (product: Product) => {
-    setCart((prev) => {
-      const found = prev.find((item) => item.id === product.id);
-      if (found) {
-        return prev.map((item) =>
-          item.id === product.id ? { ...item, quantity: item.quantity + 1 } : item
-        );
+  const router = useRouter()
+  const { isReady } = useTelegram()
+  const { user } = useAuthStore()
+  const { getTotalItems } = useCartStore()
+
+  const totalItems = getTotalItems()
+
+  useEffect(() => {
+    const fetchProducts = async () => {
+      try {
+        setLoading(true)
+        const response = await fetch("/api/products")
+        const data = await response.json()
+
+        if (data.success) {
+          setProducts(data.products)
+        } else {
+          setError("Failed to load products")
+        }
+      } catch (err) {
+        setError("Network error occurred")
+        console.error("Error fetching products:", err)
+      } finally {
+        setLoading(false)
       }
-      return [...prev, { ...product, quantity: 1 }];
-    });
-  };
+    }
+
+    if (isReady) {
+      fetchProducts()
+    }
+  }, [isReady])
+
+  if (!isReady) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="text-center space-y-4">
+          <Loader2 className="w-8 h-8 animate-spin mx-auto" />
+          <p className="text-muted-foreground">Initializing Telegram Mini App...</p>
+        </div>
+      </div>
+    )
+  }
 
   return (
-    <main className="min-h-screen bg-black text-white px-6 py-8">
-      <h1 className="text-3xl font-bold mb-8">Storefront</h1>
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-8">
-        {PRODUCTS.map((p) => (
-          <div key={p.id} className="bg-gray-900 rounded-2xl shadow-lg p-4 flex flex-col items-center">
-            <img src={p.image} alt={p.name} className="w-32 h-32 object-cover rounded-lg mb-4" />
-            <h2 className="font-semibold text-lg mb-2">{p.name}</h2>
-            <p className="text-green-400 font-bold mb-4">${p.price.toFixed(2)}</p>
-            <button
-              onClick={() => addToCart(p)}
-              className="bg-green-500 hover:bg-green-600 text-black font-bold px-4 py-2 rounded-full transition"
-            >
-              Add to Cart
-            </button>
+    <div className="container mx-auto px-4 py-6 max-w-4xl">
+      {/* Header */}
+      <div className="flex items-center justify-between mb-6">
+        <div className="space-y-1">
+          <h1 className="text-2xl font-bold">Mini App Store</h1>
+          {user && (
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <User className="w-4 h-4" />
+              <span>Welcome, {user.first_name}!</span>
+            </div>
+          )}
+        </div>
+
+        <div className="flex items-center gap-2">
+          {user && (
+            <Button variant="ghost" size="sm" onClick={() => router.push("/profile")}>
+              <User className="w-4 h-4" />
+            </Button>
+          )}
+
+          <Button variant="outline" size="sm" onClick={() => router.push("/cart")} className="relative">
+            <ShoppingCart className="w-4 h-4 mr-2" />
+            Cart
+            {totalItems > 0 && (
+              <Badge
+                variant="destructive"
+                className="absolute -top-2 -right-2 h-5 w-5 flex items-center justify-center p-0 text-xs"
+              >
+                {totalItems}
+              </Badge>
+            )}
+          </Button>
+        </div>
+      </div>
+
+      {/* Error Alert */}
+      {error && (
+        <Alert className="mb-6">
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      )}
+
+      {/* Loading State */}
+      {loading && (
+        <div className="flex items-center justify-center py-12">
+          <div className="text-center space-y-4">
+            <Loader2 className="w-8 h-8 animate-spin mx-auto" />
+            <p className="text-muted-foreground">Loading products...</p>
           </div>
-        ))}
-      </div>
-      <div className="fixed bottom-6 right-6">
-        <Link href="/cart">
-          <button
-            className="bg-white text-black font-bold rounded-full px-6 py-3 shadow-lg hover:bg-gray-300 transition"
-          >
-            Cart ({cart.reduce((sum, item) => sum + item.quantity, 0)})
-          </button>
-        </Link>
-      </div>
-    </main>
-  );
+        </div>
+      )}
+
+      {/* Products Grid */}
+      {!loading && products.length > 0 && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+          {products.map((product) => (
+            <ProductCard key={product.id} product={product} />
+          ))}
+        </div>
+      )}
+
+      {/* Empty State */}
+      {!loading && products.length === 0 && !error && (
+        <div className="text-center py-12">
+          <p className="text-muted-foreground">No products available</p>
+        </div>
+      )}
+    </div>
+  )
 }
+
+
+
+
+
+
+
+
+
+
+
+
+// "use client";
+
+// import { useEffect, useState } from "react";
+
+// interface UserData {
+//   id: number;
+//   first_name: string;
+//   last_name?: string;
+//   username?: string;
+//   language_code: string;
+//   is_premium?: boolean;
+// }
+
+// export default function HomePage() {
+//   const [userData, setUserData] = useState<UserData | null>(null);
+//   const [error, setError] = useState<string | null>(null);
+
+//   useEffect(() => {
+//     // Access Telegram WebApp object if available
+//     if (typeof window !== "undefined") {
+//       // @ts-ignore
+//       const tg = window.Telegram?.WebApp;
+//       if (tg && tg.initDataUnsafe && tg.initDataUnsafe.user) {
+//         const u = tg.initDataUnsafe.user;
+//         setUserData({
+//           id: u.id,
+//           first_name: u.first_name,
+//           last_name: u.last_name,
+//           username: u.username,
+//           language_code: u.language_code,
+//           is_premium: u.is_premium,
+//         });
+//       } else {
+//         setError("No Telegram user data found. Please open this app via Telegram.");
+//       }
+//     }
+//   }, []);
+
+//   if (error) return <div className="p-4 text-red-500">{error}</div>;
+
+//   return (
+//     <main className="flex flex-col items-center justify-center min-h-screen p-4">
+//       {userData ? (
+//         <>
+//           <h1 className="text-2xl font-bold mb-4">Your Telegram Data</h1>
+//           <ul className="bg-white rounded shadow p-6">
+//             <li>
+//               <strong>User ID:</strong> {userData.id}
+//             </li>
+//             <li>
+//               <strong>First Name:</strong> {userData.first_name}
+//             </li>
+//             <li>
+//               <strong>Last Name:</strong> {userData.last_name ?? "(none)"}
+//             </li>
+//             <li>
+//               <strong>Username:</strong> @{userData.username ?? "(none)"}
+//             </li>
+//             <li>
+//               <strong>Language Code:</strong> {userData.language_code}
+//             </li>
+//             <li>
+//               <strong>Premium:</strong> {userData.is_premium ? "Yes" : "No"}
+//             </li>
+//           </ul>
+//         </>
+//       ) : (
+//         <p className="text-gray-500">Loading Telegram user data...</p>
+//       )}
+//     </main>
+//   );
+// }
